@@ -1,0 +1,35 @@
+# --- Dependencies ---
+node_modules/
+/.pnp
+.pnp.js
+
+# --- Testing ---
+/coverage
+
+# --- Production Build ---
+# Standard build folders for React/Vite/Next.js
+/build
+/dist
+/.next/
+/out
+
+# --- Environment Variables ---
+# Never commit your API keys or secrets
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# --- Debug Logs ---
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# --- OS Generated Files ---
+.DS_Store
+Thumbs.db
+
+# --- Editor / IDE ---
+.vscode/
+.idea/

@@ -1,0 +1,48 @@
+React Collaboration Platform (Frontend)
+
+This is the React-based web application for the professional collaboration network.
+
+How to Run This Project
+
+Place Files:
+Make sure all the frontend files are in this frontend directory.
+
+README.md
+
+package.json
+
+.gitignore
+
+public/ (folder)
+
+index.html
+
+src/ (folder)
+
+App.jsx
+
+index.css
+
+index.js
+
+Install Dependencies:
+Open a terminal in this frontend directory and run:
+
+npm install
+
+This will read package.json and install React and other necessary packages.
+
+Start the Development Server:
+Once installation is complete, run:
+
+npm start
+
+This will open the application in your web browser, typically at http://localhost:3000.
+
+How It Works
+
+src/App.jsx: This is the main application file containing all your React components, UI, and logic.
+
+src/index.js: This file takes your App component and renders it into the index.html page.
+
+public/index.html: This is the single HTML page. It includes a <script> tag for the Tailwind CSS CDN, which makes all the styling work without any build setup.
