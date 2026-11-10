@@ -1,73 +1,62 @@
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { toast } from "react-toastify";
+import Loader from "../components/loader.jsx";
+import { apiUrl } from "../utils/api.js";
 import "react-toastify/dist/ReactToastify.css";
-
-const API_BASE = "http://127.0.0.1:8000/api/v1";
 
 export default function ProfilePage({ user, setUser }) {
   const [isEditing, setIsEditing] = useState(false);
-  const [profile, setProfile] = useState({
-    ...user,
-    avatarPreview: user?.avatar_url || "",
-    avatarFile: null,
-  });
+  const [profile, setProfile] = useState({ ...user, avatarPreview: user?.avatar_url || "", avatarFile: null });
   const [feedbackList, setFeedbackList] = useState([]);
   const [collaborationList, setCollaborationList] = useState([]);
+  const [profileLoading, setProfileLoading] = useState(Boolean(user?.id));
+  const [profileError, setProfileError] = useState("");
 
-  // ✅ Fetch feedbacks for the user
   useEffect(() => {
-    if (!user?.id) return;
+    if (!user?.id) {
+      setProfileLoading(false);
+      return undefined;
+    }
+    let active = true;
+    setProfileLoading(true);
+    setProfileError("");
+    Promise.all([
+      fetch(apiUrl(`/api/v1/feedbacks/${encodeURIComponent(user.id)}`)).then((response) => {
+        if (!response.ok) throw new Error("Failed to load feedback");
+        return response.json();
+      }),
+      fetch(apiUrl(`/api/v1/users/${encodeURIComponent(user.id)}/collaborations`)).then((response) => {
+        if (!response.ok) throw new Error("Failed to load collaborations");
+        return response.json();
+      }),
+    ]).then(([feedback, collaborations]) => {
+      if (!active) return;
+      setFeedbackList(feedback);
+      setCollaborationList(collaborations);
+    }).catch((error) => {
+      console.error("Profile data fetch failed:", error);
+      if (active) setProfileError("Some profile information could not be loaded.");
+    }).finally(() => {
+      if (active) setProfileLoading(false);
+    });
+    return () => { active = false; };
+  }, [user?.id]);
 
-    const fetchFeedbacks = async () => {
-      try {
-        const res = await fetch(`${API_BASE}/feedbacks/${user.id}`);
-        if (!res.ok) throw new Error("Failed to load feedbacks");
-        const data = await res.json();
-        setFeedbackList(data);
-      } catch (err) {
-        console.error("Feedback fetch failed:", err);
-        setFeedbackList([]);
-      }
-    };
-
-    fetchFeedbacks();
+  useEffect(() => {
+    setProfile((current) => ({ ...current, ...user, avatarPreview: user?.avatar_url || current.avatarPreview, avatarFile: null }));
   }, [user]);
 
-  // ✅ Fetch collaborations for the user
   useEffect(() => {
-    if (!user?.id) return;
+    const params = new URLSearchParams(window.location.search);
+    const name = params.get("name");
+    const email = params.get("email");
+    const avatar = params.get("avatar");
+    if (name || email || avatar) {
+      setProfile((current) => ({ ...current, name: name || current.name, email: email || current.email, avatarPreview: avatar || current.avatarPreview }));
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }, []);
 
-    const fetchCollaborations = async () => {
-      try {
-        const res = await fetch(`${API_BASE}/users/${user.id}/collaborations`);
-        if (!res.ok) throw new Error("Failed to load collaborations");
-        const data = await res.json();
-        setCollaborationList(data);
-      } catch (err) {
-        console.error("Collaboration fetch failed:", err);
-        setCollaborationList([]);
-      }
-    };
-
-    fetchCollaborations();
-  }, [user]);
-useEffect(() => {
-  const params = new URLSearchParams(window.location.search);
-  const name = params.get("name");
-  const email = params.get("email");
-  const avatar = params.get("avatar");
-
-  if (name || email) {
-    setProfile((prev) => ({
-      ...prev,
-      name: name || prev.name,
-      email: email || prev.email,
-      avatarPreview: avatar || prev.avatarPreview,
-    }));
-  }
-}, []);
-
-  // ✅ Save updated profile
   const handleSaveProfile = async () => {
     try {
       const formData = new FormData();
@@ -75,258 +64,82 @@ useEffect(() => {
       formData.append("title", profile.title || "");
       formData.append("skills", JSON.stringify(profile.skills || []));
       formData.append("linked_accounts", JSON.stringify(profile.linked_accounts || {}));
+      if (profile.avatarFile) formData.append("avatar", profile.avatarFile);
 
-      if (profile.avatarFile) {
-        formData.append("avatar", profile.avatarFile);
-      }
-
-      const res = await fetch(`${API_BASE}/users/${user.id}`, {
-        method: "PUT",
-        body: formData,
-      });
-
-      if (!res.ok) {
-        const errorText = await res.text();
-        console.error("Backend error:", errorText);
-        toast.error("❌ Couldn't update profile");
-        return;
-      }
-
-      const updatedUser = await res.json();
-      toast.success("✅ Profile updated successfully!");
+      const response = await fetch(apiUrl(`/api/v1/users/${encodeURIComponent(user.id)}`), { method: "PUT", body: formData });
+      if (!response.ok) throw new Error(await response.text());
+      const updatedUser = await response.json();
       setUser(updatedUser);
+      setProfile((current) => ({ ...current, ...updatedUser, avatarPreview: updatedUser.avatar_url || current.avatarPreview, avatarFile: null }));
       setIsEditing(false);
-    } catch (err) {
-      console.error("Profile update error:", err);
-      toast.error("❌ Connection failed");
+      toast.success("Profile updated.");
+    } catch (error) {
+      console.error("Profile update failed:", error);
+      toast.error("Could not save your profile. Check your connection and try again.");
     }
   };
 
-  // ✅ Handle input field updates
-  const handleInputChange = (key, value) =>
-    setProfile((prev) => ({ ...prev, [key]: value }));
-
-  // ✅ Avatar upload handler
-  const handleAvatarUpload = (e) => {
-    const file = e.target.files[0];
+  const handleInputChange = (key, value) => setProfile((current) => ({ ...current, [key]: value }));
+  const handleAvatarUpload = (event) => {
+    const file = event.target.files?.[0];
     if (!file) return;
-    const previewURL = URL.createObjectURL(file);
-    setProfile((prev) => ({
-      ...prev,
-      avatarPreview: previewURL,
-      avatarFile: file,
-    }));
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("Choose an image smaller than 5 MB.");
+      event.target.value = "";
+      return;
+    }
+    setProfile((current) => ({ ...current, avatarPreview: URL.createObjectURL(file), avatarFile: file }));
   };
 
-  if (!user)
-    return (
-      <div className="text-gray-400 text-center py-10">
-        Please log in to view your profile.
-      </div>
-    );
+  if (profileLoading) return <Loader fullScreen label="Loading your profile" />;
+  if (!user) return <div className="py-10 text-center text-gray-400">Please log in to view your profile.</div>;
 
   return (
-    <section className="max-w-3xl mx-auto bg-gray-900 p-8 rounded-2xl border border-gray-700 shadow-lg">
-      {/* ✅ Profile Header */}
-      <div className="flex items-center gap-6 mb-8">
+    <section className="surface-card mx-auto max-w-3xl p-5 sm:p-8" aria-labelledby="profile-heading">
+      {profileError && <p role="alert" className="mb-5 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-200">{profileError}</p>}
+      <div className="mb-8 flex flex-wrap items-center gap-5">
         <div className="relative">
-          <img
-            src={profile.avatarPreview || "/default-avatar.png"}
-            alt="User Avatar"
-            className="w-24 h-24 rounded-full border-2 border-indigo-400 object-cover"
-          />
-          {isEditing && (
-            <label
-              htmlFor="avatarUpload"
-              className="absolute bottom-0 right-0 bg-indigo-600 hover:bg-indigo-500 text-white p-2 rounded-full cursor-pointer shadow-md transition-all duration-200"
-              title="Upload new avatar"
-            >
-              📷
-              <input
-                id="avatarUpload"
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={handleAvatarUpload}
-              />
-            </label>
-          )}
+          <img src={profile.avatarPreview || "/default-avatar.png"} alt={`${profile.name || "User"} avatar`} className="h-24 w-24 rounded-full border border-gray-700 object-cover" />
+          {isEditing && <label htmlFor="avatarUpload" className="absolute bottom-0 right-0 cursor-pointer rounded-full bg-indigo-600 p-2 text-white" title="Upload avatar">📷<input id="avatarUpload" type="file" accept="image/*" className="sr-only" onChange={handleAvatarUpload} /></label>}
         </div>
-
-        <div>
-          {isEditing ? (
-            <>
-              <input
-                className="text-xl bg-gray-800 rounded p-2 text-gray-200 w-full"
-                value={profile.name || ""}
-                onChange={(e) => handleInputChange("name", e.target.value)}
-              />
-              <input
-                className="mt-2 bg-gray-800 rounded p-2 text-gray-200 w-full"
-                placeholder="Title"
-                value={profile.title || ""}
-                onChange={(e) => handleInputChange("title", e.target.value)}
-              />
-            </>
-          ) : (
-            <>
-              <h3 className="text-2xl font-semibold">{user.name}</h3>
-              <p className="text-gray-400">{user.title || "No title added"}</p>
-            </>
-          )}
+        <div className="min-w-0 flex-1">
+          {isEditing ? <>
+            <label className="sr-only" htmlFor="profile-name">Full name</label>
+            <input id="profile-name" className="field-control text-xl" value={profile.name || ""} onChange={(event) => handleInputChange("name", event.target.value)} />
+            <label className="sr-only" htmlFor="profile-title">Title</label>
+            <input id="profile-title" className="field-control mt-2" placeholder="Title" value={profile.title || ""} onChange={(event) => handleInputChange("title", event.target.value)} />
+          </> : <>
+            <h1 id="profile-heading" className="text-2xl font-semibold">{user.name}</h1>
+            <p className="text-gray-400">{user.title || "No title added"}</p>
+          </>}
         </div>
+        {!isEditing && <button type="button" onClick={() => setIsEditing(true)} className="secondary-button">Edit profile</button>}
       </div>
 
-      {/* ✅ Skills Section */}
       <div className="mb-6">
-        <h4 className="font-semibold mb-2 text-indigo-300">Skills</h4>
-        {isEditing ? (
-          <input
-            className="w-full p-2 bg-gray-800 rounded text-gray-200"
-            placeholder="e.g., React, Node.js, Python"
-            value={(profile.skills || []).join(", ")}
-            onChange={(e) =>
-              handleInputChange(
-                "skills",
-                e.target.value.split(",").map((s) => s.trim())
-              )
-            }
-          />
-        ) : (
-          <div className="flex flex-wrap gap-2">
-            {(user.skills || []).length > 0 ? (
-              user.skills.map((skill, i) => (
-                <span
-                  key={i}
-                  className="px-3 py-1 text-sm rounded-full bg-gray-800 text-indigo-200"
-                >
-                  {skill}
-                </span>
-              ))
-            ) : (
-              <p className="text-gray-400">No skills listed.</p>
-            )}
-          </div>
-        )}
+        <h2 className="mb-3 font-semibold text-indigo-300">Skills</h2>
+        {isEditing ? <input aria-label="Skills, comma separated" className="field-control" placeholder="React, design, Python" value={(profile.skills || []).join(", ")} onChange={(event) => handleInputChange("skills", event.target.value.split(",").map((skill) => skill.trim()).filter(Boolean))} /> : <div className="flex flex-wrap gap-2">{(user.skills || []).length ? user.skills.map((skill) => <span key={skill} className="rounded-full bg-gray-800 px-3 py-1 text-sm text-indigo-200">{skill}</span>) : <p className="text-gray-400">No skills listed.</p>}</div>}
       </div>
 
-      {/* ✅ Linked Accounts */}
-      <div className="mb-8">
-        <h4 className="font-semibold mb-2 text-indigo-300">Linked Accounts</h4>
-        {isEditing ? (
-          ["linkedin", "github"].map((platform) => (
-            <input
-              key={platform}
-              className="w-full p-2 bg-gray-800 rounded mb-2 text-gray-200"
-              placeholder={platform.charAt(0).toUpperCase() + platform.slice(1)}
-              value={profile.linked_accounts?.[platform] || ""}
-              onChange={(e) =>
-                setProfile({
-                  ...profile,
-                  linked_accounts: {
-                    ...profile.linked_accounts,
-                    [platform]: e.target.value,
-                  },
-                })
-              }
-            />
-          ))
-        ) : (
-          <ul className="text-gray-300 space-y-1">
-            {user.linked_accounts?.linkedin && (
-              <li>🔗 LinkedIn: {user.linked_accounts.linkedin}</li>
-            )}
-            {user.linked_accounts?.github && (
-              <li>💻 GitHub: {user.linked_accounts.github}</li>
-            )}
-            {!user.linked_accounts?.linkedin &&
-              !user.linked_accounts?.github && (
-                <p className="text-gray-500">No linked accounts added.</p>
-              )}
-          </ul>
-        )}
+      {isEditing && <div className="mb-6">
+        <h2 className="mb-3 font-semibold text-indigo-300">Links</h2>
+        {[["linkedin", "LinkedIn"], ["github", "GitHub"], ["codeforces", "Codeforces"]].map(([key, label]) => <label key={key} className="mb-3 block text-sm text-gray-400">{label}<input className="field-control mt-1" value={profile.linked_accounts?.[key] || ""} onChange={(event) => handleInputChange("linked_accounts", { ...profile.linked_accounts, [key]: event.target.value })} /></label>)}
+      </div>}
+
+      <div className="mb-6">
+        <h2 className="mb-3 font-semibold text-indigo-300">Collaborations</h2>
+        {collaborationList.length ? <div className="grid gap-3 sm:grid-cols-2">{collaborationList.map((project) => <article key={project.id} className="surface-subtle p-4"><h3 className="font-semibold">{project.title}</h3><p className="mt-1 text-sm text-gray-400">{project.description}</p></article>)}</div> : <p className="text-sm text-gray-400">No collaborations yet.</p>}
       </div>
 
-      {/* ✅ Action Buttons */}
-      <div className="flex justify-end gap-3 mb-8">
-        {isEditing ? (
-          <>
-            <button
-              onClick={() => setIsEditing(false)}
-              className="px-4 py-2 bg-gray-700 rounded-lg hover:bg-gray-600"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleSaveProfile}
-              className="px-5 py-2 bg-gradient-to-r from-purple-500 via-pink-500 to-red-500 text-white font-semibold rounded-xl shadow-md hover:scale-105 transition-all"
-            >
-              Save
-            </button>
-          </>
-        ) : (
-          <button
-            onClick={() => setIsEditing(true)}
-            className="px-5 py-2 bg-gradient-to-r from-amber-400 to-orange-500 text-white font-semibold rounded-xl shadow-md hover:scale-105 transition-all"
-          >
-            Edit Profile
-          </button>
-        )}
+      <div className="mb-6">
+        <h2 className="mb-3 font-semibold text-indigo-300">Feedback</h2>
+        {feedbackList.length ? <div className="space-y-3">{feedbackList.map((feedback) => <article key={feedback.id} className="surface-subtle p-4"><p>{feedback.comment}</p>{feedback.endorsed_skill && <span className="mt-2 inline-block rounded-full bg-gray-700 px-2 py-1 text-xs text-indigo-200">{feedback.endorsed_skill}</span>}</article>)}</div> : <p className="text-sm text-gray-400">No feedback yet.</p>}
       </div>
 
-      {/* ✅ Feedback Section */}
-      <div className="border-t border-gray-700 pt-6">
-        <h3 className="text-lg font-semibold text-indigo-400 mb-3">
-          Feedback Received
-        </h3>
-        {feedbackList.map((fb) => (
-  <div
-    key={fb.id}
-    className="bg-gray-800 p-3 rounded-lg mb-3 border border-gray-700"
-  >
-    <p className="text-gray-200">{fb.comment}</p>
-
-    {fb.endorsed_skill && (
-      <p className="text-sm text-amber-400 mt-1">
-        ⭐ Skill Endorsed: <span className="font-semibold">{fb.endorsed_skill}</span>
-      </p>
-    )}
-
-    <p className="text-xs text-gray-500 text-right mt-2">
-      — by {fb.author_name || fb.author_id}
-    </p>
-  </div>
-))}
-
-      </div>
-
-      {/* ✅ Collaboration History */}
-      <div className="border-t border-gray-700 pt-6 mt-6">
-        <h3 className="text-lg font-semibold text-indigo-400 mb-3">
-          Collaboration History
-        </h3>
-        {collaborationList.length === 0 ? (
-          <p className="text-gray-400">No collaborations yet.</p>
-        ) : (
-          <div className="grid gap-4 md:grid-cols-2">
-            {collaborationList.map((proj) => (
-              <div
-                key={proj.id}
-                className="bg-gray-800 p-4 rounded-xl border border-gray-700 hover:scale-[1.02] transition-all"
-              >
-                <h4 className="text-indigo-300 font-semibold">{proj.title}</h4>
-                <p className="text-gray-300 mt-1">{proj.description}</p>
-                <p className="text-gray-400 text-sm mt-2">
-                  🎯 {proj.goal || "No goal specified"}
-                </p>
-                <p className="text-gray-500 text-sm italic mt-1">
-                  💡 {proj.benifits || "No benefits specified"}
-                </p>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+      {isEditing && <div className="flex justify-end gap-3 border-t border-gray-700 pt-5">
+        <button type="button" onClick={() => { setProfile({ ...user, avatarPreview: user.avatar_url || "", avatarFile: null }); setIsEditing(false); }} className="secondary-button">Cancel</button>
+        <button type="button" onClick={handleSaveProfile} className="primary-button">Save profile</button>
+      </div>}
     </section>
   );
 }

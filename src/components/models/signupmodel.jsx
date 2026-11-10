@@ -1,187 +1,53 @@
 import React, { useState } from "react";
 import { motion } from "framer-motion";
 import { toast } from "react-toastify";
-import "react-toastify/dist/ReactToastify.css";
+import { apiUrl } from "../../utils/api.js";
 
-const API_BASE = "http://127.0.0.1:8000/api/v1";
+const INITIAL_FORM = { name: "", type: "individual", title: "", password: "", skills: "", linkedin: "", codeforces: "", github: "" };
 
-/**
- * SignupModal — Allows a new user to create an account.
- * @param {Function} onClose - Close modal handler.
- * @param {Function} onSignup - Callback when signup succeeds.
- */
 export default function SignupModal({ onClose, onSignup }) {
-  const [formData, setFormData] = useState({
-    name: "",
-    type: "individual",
-    title: "",
-    password:"",
-    skills: "",
-    linkedin: "",
-    codeforces: "",
-    github: "",
-  });
-
+  const [formData, setFormData] = useState(INITIAL_FORM);
   const [loading, setLoading] = useState(false);
+  const update = (key, value) => setFormData((previous) => ({ ...previous, [key]: value }));
 
-  /** 🧾 Handle form submission */
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-
-    if (!formData.name.trim()) {
-      toast.warn("⚠️ Please enter your full name.");
-      return;
-    }
-
-    const userId = `user_${Date.now()}`;
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    if (!formData.name.trim()) return toast.warn("Enter your name to continue.");
     const payload = {
-      id: userId,
-      name: formData.name.trim(),
-      type: formData.type,
-      title: formData.title.trim(),
-      skills: formData.skills
-        ? formData.skills.split(",").map((s) => s.trim()).filter(Boolean)
-        : [],
-        password: formData.password,
-      linked_accounts: {
-        linkedin: formData.linkedin.trim(),
-        codeforces: formData.codeforces.trim(),
-        github: formData.github.trim(),
-      },
-      avatar_url: `https://placehold.co/100x100/6366F1/FFFFFF?text=${formData.name
-        .slice(0, 2)
-        .toUpperCase()}`,
+      id: `user_${Date.now()}`, name: formData.name.trim(), type: formData.type,
+      title: formData.title.trim(), skills: formData.skills.split(",").map((skill) => skill.trim()).filter(Boolean),
+      password: formData.password,
+      linked_accounts: { linkedin: formData.linkedin.trim(), codeforces: formData.codeforces.trim(), github: formData.github.trim() },
+      avatar_url: `https://placehold.co/100x100/247a50/FFFFFF?text=${encodeURIComponent(formData.name.slice(0, 2).toUpperCase())}`,
     };
-
     try {
       setLoading(true);
-      const res = await fetch(`${API_BASE}/users`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.detail || "Signup failed");
+      const response = await fetch(apiUrl("/api/v1/users"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.detail || "Account creation failed.");
       }
-
-      const data = await res.json();
-      toast.success(`✅ Welcome, ${data.name}! You’re now logged in.`);
-      onSignup(data); // Automatically set user and close modal
-    } catch (err) {
-      toast.error(`❌ ${err.message || "Could not complete signup."}`);
-    } finally {
-      setLoading(false);
-    }
+      const user = await response.json();
+      toast.success(`Welcome to DevCloud, ${user.name}.`);
+      onSignup(user);
+    } catch (error) { toast.error(error.message || "Could not create your account."); }
+    finally { setLoading(false); }
   };
 
-  /** 🎨 Model UI */
   return (
-    <motion.div
-      className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 backdrop-blur-sm"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-    >
-      <motion.form
-        onSubmit={handleSubmit}
-        className="bg-gray-900 p-8 rounded-2xl w-[90%] max-w-2xl border border-gray-700 shadow-2xl space-y-4 overflow-y-auto max-h-[90vh]"
-        initial={{ scale: 0.9 }}
-        animate={{ scale: 1 }}
-      >
-        <h3 className="text-2xl font-semibold text-indigo-400 text-center">
-          Create Account
-        </h3>
-
-        {/* 🧍‍♂️ Basic Info */}
-        <input
-          required
-          placeholder="Full Name"
-          value={formData.name}
-          onChange={(e) =>
-            setFormData((prev) => ({ ...prev, name: e.target.value }))
-          }
-          className="w-full p-3 bg-gray-800 rounded-lg text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-        />
-        <input
-          required
-          type="password"
-          placeholder="Create Password"
-          value={formData.password}
-          onChange={(e) => setFormData((s) => ({ ...s, password: e.target.value }))}
-          className="w-full p-3 bg-gray-800 rounded-lg text-gray-200"
-        />
-        <select
-          value={formData.type}
-          onChange={(e) =>
-            setFormData((prev) => ({ ...prev, type: e.target.value }))
-          }
-          className="w-full p-3 bg-gray-800 rounded-lg text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-        >
-          <option value="individual">Individual</option>
-          <option value="organization">Organization</option>
-        </select>
-        <input
-          placeholder="Title or Role"
-          value={formData.title}
-          onChange={(e) =>
-            setFormData((prev) => ({ ...prev, title: e.target.value }))
-          }
-          className="w-full p-3 bg-gray-800 rounded-lg text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-        />
-        {/* 🛠 Skills & Links */}
-        <input
-          placeholder="Skills (comma separated)"
-          value={formData.skills}
-          onChange={(e) =>
-            setFormData((prev) => ({ ...prev, skills: e.target.value }))
-          }
-          className="w-full p-3 bg-gray-800 rounded-lg text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-        />
-        <input
-          placeholder="LinkedIn Profile URL"
-          value={formData.linkedin}
-          onChange={(e) =>
-            setFormData((prev) => ({ ...prev, linkedin: e.target.value }))
-          }
-          className="w-full p-3 bg-gray-800 rounded-lg text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-        />
-        <input
-          placeholder="Codeforces Profile URL"
-          value={formData.codeforces}
-          onChange={(e) =>
-            setFormData((prev) => ({ ...prev, codeforces: e.target.value }))
-          }
-          className="w-full p-3 bg-gray-800 rounded-lg text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-        />
-        <input
-          placeholder="GitHub Profile URL"
-          value={formData.github}
-          onChange={(e) =>
-            setFormData((prev) => ({ ...prev, github: e.target.value }))
-          }
-          className="w-full p-3 bg-gray-800 rounded-lg text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-        />
-
-        {/* 🎯 Buttons */}
-        <div className="flex justify-end gap-3 pt-3">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-5 py-2 bg-gray-800 border border-gray-700 text-gray-300 rounded-xl font-medium hover:bg-gray-900 hover:border-indigo-400 hover:text-indigo-300 transition-all duration-200 shadow-sm"
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            disabled={loading}
-            className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-semibold transition-all duration-200 transform hover:scale-105 disabled:opacity-50"
-          >
-            {loading ? "Creating..." : "Sign Up"}
-          </button>
-          
+    <motion.div className="modal-backdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onMouseDown={(event) => { if (event.target === event.currentTarget && !loading) onClose(); }}>
+      <motion.form onSubmit={handleSubmit} className="modal-card max-w-xl" role="dialog" aria-modal="true" aria-labelledby="signup-heading" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }}>
+        <div className="mb-5"><p className="page-kicker">Create your profile</p><h2 id="signup-heading" className="modal-title mt-2">Join the community</h2><p className="modal-copy mt-2">Tell people what you do and what you’d like to work on.</p></div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <label className="modal-label">Full name<input required autoComplete="name" value={formData.name} onChange={(event) => update("name", event.target.value)} className="field-control mt-2" placeholder="Your name" /></label>
+          <label className="modal-label">Password<input required minLength={8} autoComplete="new-password" type="password" value={formData.password} onChange={(event) => update("password", event.target.value)} className="field-control mt-2" placeholder="At least 8 characters" /></label>
+          <label className="modal-label">Account type<select value={formData.type} onChange={(event) => update("type", event.target.value)} className="field-control mt-2"><option value="individual">Individual</option><option value="organization">Organization</option></select></label>
+          <label className="modal-label">Role or title<input value={formData.title} onChange={(event) => update("title", event.target.value)} className="field-control mt-2" placeholder="Designer, developer…" /></label>
+          <label className="modal-label sm:col-span-2">Skills<input value={formData.skills} onChange={(event) => update("skills", event.target.value)} className="field-control mt-2" placeholder="React, research, product design" /></label>
+          <label className="modal-label">GitHub<input value={formData.github} onChange={(event) => update("github", event.target.value)} className="field-control mt-2" placeholder="Profile URL" /></label>
+          <label className="modal-label">LinkedIn<input value={formData.linkedin} onChange={(event) => update("linkedin", event.target.value)} className="field-control mt-2" placeholder="Profile URL" /></label>
         </div>
+        <div className="mt-6 flex flex-col-reverse justify-end gap-2 sm:flex-row"><button type="button" onClick={onClose} disabled={loading} className="secondary-button">Cancel</button><button type="submit" disabled={loading} className="primary-button">{loading ? "Creating account…" : "Create account"}</button></div>
       </motion.form>
     </motion.div>
   );

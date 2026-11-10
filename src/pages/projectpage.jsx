@@ -1,152 +1,74 @@
-import React, { useState, useMemo } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import React, { useMemo, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import RefreshButton from "../components/refreshbutton.jsx";
 import ApplyModal from "../components/models/applymodel.jsx";
 
-/**
- * ProjectsPage — Displays all projects, allows filtering, and lets users apply.
- * @param {Array} projects - List of all project objects.
- * @param {Function} reload - Function to reload project data.
- * @param {Object} user - Currently logged-in user.
- * @param {Function} loadMessages - Function to reload user messages.
- * @param {Array} messages - All messages related to applications/collaboration.
- */
-export default function ProjectsPage({ projects, reload, user, loadMessages, messages }) {
+export default function ProjectsPage({ projects = [], reload, user, loadMessages, messages = [] }) {
   const [showApply, setShowApply] = useState(false);
   const [selectedProject, setSelectedProject] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  const [sortOrder, setSortOrder] = useState("newest");
 
-  /** 🔍 Filter projects efficiently using useMemo to avoid re-computation on every render */
   const filteredProjects = useMemo(() => {
-    const term = searchTerm.toLowerCase();
-    return projects.filter(
-      (p) =>
-        p.title?.toLowerCase().includes(term) ||
-        p.organization?.toLowerCase().includes(term) ||
-        p.goal?.toLowerCase().includes(term) ||
-        p.benifits?.toLowerCase().includes(term)
-    );
-  }, [projects, searchTerm]);
+    const term = searchTerm.trim().toLowerCase();
+    return projects
+      .filter((project) => [project.title, project.organization, project.goal, project.benifits, project.benefits, project.description, ...(project.skills || [])].some((value) => value?.toLowerCase().includes(term)))
+      .sort((a, b) => sortOrder === "oldest"
+        ? new Date(a.created_at || 0) - new Date(b.created_at || 0)
+        : sortOrder === "title" ? (a.title || "").localeCompare(b.title || "") : new Date(b.created_at || 0) - new Date(a.created_at || 0));
+  }, [projects, searchTerm, sortOrder]);
 
-  /** 📨 Determine current user's relationship with a project */
-  const getApplicationStatus = (p) => {
-    const priorMsg = messages
-      ?.filter(
-        (m) =>
-          (m.project_id === p.id || m.content?.includes(p.title)) &&
-          ((m.sender_id === user?.id && m.receiver_id === p.owner_id) ||
-            (m.receiver_id === user?.id && m.sender_id === p.owner_id))
-      )
-      ?.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0];
+  const getApplicationStatus = (project) => messages
+    .filter((message) => (message.project_id === project.id || message.content?.includes(project.title)) &&
+      ((message.sender_id === user?.id && message.receiver_id === project.owner_id) || (message.receiver_id === user?.id && message.sender_id === project.owner_id)))
+    .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0]?.status || null;
 
-    return priorMsg?.status || null;
-  };
-
-  /** 🔁 Reload projects safely with refresh indicator */
   const handleRefresh = async () => {
     setRefreshing(true);
-    await reload();
-    setTimeout(() => setRefreshing(false), 600);
+    try { await reload(); } finally { setRefreshing(false); }
   };
 
   return (
-    <section className="min-h-screen">
-      {/* 🔍 Header: Search + Refresh */}
-      <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
-        <div className="flex items-center gap-3">
-          <h2 className="text-2xl font-semibold">Projects</h2>
+    <section aria-labelledby="projects-heading">
+      <div className="project-toolbar">
+        <div className="project-toolbar-heading">
+          <p className="page-kicker">Community directory</p>
+          <h1 id="projects-heading" className="page-heading mt-2">Explore projects</h1>
+          <p className="mt-2 text-sm text-gray-400">Find a team and a problem you care about.</p>
+        </div>
+        <label><span className="sr-only">Search projects</span><input type="search" aria-label="Search projects" placeholder="Search names, skills, or goals" value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} className="field-control" /></label>
+        <div className="flex items-center justify-between gap-3 sm:justify-end">
+          <label className="flex items-center gap-2 text-sm text-gray-400"><span>Sort</span><select aria-label="Sort projects" value={sortOrder} onChange={(event) => setSortOrder(event.target.value)} className="field-control !w-auto !py-2"><option value="newest">Newest</option><option value="oldest">Oldest</option><option value="title">A–Z</option></select></label>
           <RefreshButton onClick={handleRefresh} refreshing={refreshing} />
         </div>
-
-        <input
-          type="text"
-          placeholder="🔍 Search projects..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="px-3 py-2 rounded-lg border border-gray-600 bg-gray-800 text-white placeholder-gray-400 w-full md:w-1/3"
-        />
       </div>
-
-      {/* 🧱 Projects List */}
-      <div className="grid gap-6 md:grid-cols-2">
-        {filteredProjects.length === 0 ? (
-          <p className="text-gray-400 italic">No projects found.</p>
-        ) : (
-          filteredProjects.map((p) => {
-            const status = getApplicationStatus(p);
-            const isOwner = p.owner_id === user?.id;
-
-            return (
-              <motion.div
-                key={p.id}
-                whileHover={{ y: -6 }}
-                className="p-6 rounded-xl bg-gray-800/70 border border-gray-700 shadow-lg"
-              >
-                {/* 🏷️ Project Details */}
-                <h3 className="text-xl font-semibold text-indigo-300">{p.title}</h3>
-                <p className="text-gray-300 mt-2">{p.description || "No description provided."}</p>
-                <p className="text-gray-300 mt-2">🎯 {p.goal || "No goal specified"}</p>
-                <p className="text-gray-300 mt-2">💡 {p.benifits || "No benefits specified"}</p>
-                <p className="text-gray-400 mt-2">💰 {p.pay || "Price not specified"}</p>
-
-                {/* 🧩 Skills */}
-                {p.skills?.length > 0 && (
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {p.skills.map((s, i) => (
-                      <span
-                        key={i}
-                        className="px-3 py-1 text-sm rounded-full bg-gray-700 text-indigo-200"
-                      >
-                        {s}
-                      </span>
-                    ))}
-                  </div>
-                )}
-
-                {/* 🧠 Apply / Status Section */}
-                <div className="mt-5 flex justify-end">
-                  {!user ? (
-                    <p className="text-gray-400 italic text-sm">Login to apply</p>
-                  ) : isOwner ? (
-                    <p className="text-gray-400 italic text-sm">You created this project</p>
-                  ) : status === "accepted" ? (
-                    <p className="text-green-400 italic text-sm">
-                      ✅ You are already collaborating on this project
-                    </p>
-                  ) : status === "pending" ? (
-                    <p className="text-yellow-400 italic text-sm">⏳ Application pending</p>
-                  ) : (
-                    <button
-                      onClick={() => {
-                        setSelectedProject(p);
-                        setShowApply(true);
-                      }}
-                      className="px-5 py-2.5 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500
-                        text-white font-semibold rounded-xl shadow-md shadow-indigo-900/40
-                        transition-all duration-200 hover:scale-105 hover:shadow-lg hover:shadow-pink-700/40"
-                    >
-                      {status === "rejected" ? "Reapply" : "Apply"}
-                    </button>
-                  )}
-                </div>
-              </motion.div>
-            );
-          })
-        )}
-      </div>
-
-      {/* 📨 Apply Modal (Animated) */}
-      <AnimatePresence>
-        {showApply && selectedProject && (
-          <ApplyModal
-            project={selectedProject}
-            onClose={() => setShowApply(false)}
-            user={user}
-            loadMessages={loadMessages}
-          />
-        )}
-      </AnimatePresence>
+      <p className="mb-4 text-sm text-gray-400" aria-live="polite">{filteredProjects.length} {filteredProjects.length === 1 ? "project" : "projects"}</p>
+      {filteredProjects.length === 0 ? <div className="surface-card px-6 py-16 text-center"><p className="text-lg font-semibold text-gray-100">{searchTerm ? "No matching projects" : "Nothing here yet"}</p><p className="mt-2 text-sm text-gray-400">{searchTerm ? "Try a different search." : "Projects shared by the community will appear here."}</p>{searchTerm && <button type="button" onClick={() => setSearchTerm("")} className="mt-4 text-sm font-semibold text-indigo-400 underline">Clear search</button>}</div> :
+        <div className="project-grid">
+          {filteredProjects.map((project) => {
+            const status = getApplicationStatus(project);
+            const isOwner = project.owner_id === user?.id;
+            return <motion.article key={project.id} layout className="project-card">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0"><p className="project-card-org">{project.organization || "Community project"}</p><h2 className="project-card-title mt-1">{project.title}</h2></div>
+                {project.created_at && <time className="shrink-0 text-xs text-gray-500" dateTime={project.created_at}>{new Date(project.created_at).toLocaleDateString()}</time>}
+              </div>
+              <p className="project-card-description mt-3">{project.description || "No description provided."}</p>
+              {(project.goal || project.benefits || project.benifits || project.pay) && <p className="mt-3 text-xs text-gray-400">{project.goal || project.benefits || project.benifits || project.pay}</p>}
+              <div className="project-card-details">{(project.skills || []).slice(0, 5).map((skill) => <span key={skill} className="project-skill">{skill}</span>)}</div>
+              <div className="project-action-row">
+                <span className="text-xs text-gray-500">{project.pay || "Open collaboration"}</span>
+                {!user ? <span className="text-xs text-gray-400">Log in to apply</span>
+                  : isOwner ? <span className="text-xs text-gray-400">Your project</span>
+                    : status === "accepted" ? <span className="text-xs font-semibold text-green-400">Collaborating</span>
+                      : status === "pending" ? <span className="text-xs font-semibold text-yellow-400">Pending</span>
+                        : <button type="button" onClick={() => { setSelectedProject(project); setShowApply(true); }} className="primary-button !min-h-9 !px-3 !py-1.5 !text-xs">{status === "rejected" ? "Apply again" : "View & apply"}</button>}
+              </div>
+            </motion.article>;
+          })}
+        </div>}
+      <AnimatePresence>{showApply && selectedProject && <ApplyModal project={selectedProject} onClose={() => setShowApply(false)} user={user} loadMessages={loadMessages} />}</AnimatePresence>
     </section>
   );
 }

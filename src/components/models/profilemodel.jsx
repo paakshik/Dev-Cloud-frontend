@@ -1,15 +1,8 @@
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useState } from "react";
+import { X } from "lucide-react";
 import { toast } from "react-toastify";
-import "react-toastify/dist/ReactToastify.css";
+import { apiUrl } from "../../utils/api.js";
 
-const API_BASE = "http://127.0.0.1:8000/api/v1";
-
-/**
- * ProfileModal — Displays a user's profile with feedback system.
- * @param {Object} profile - The viewed user's profile.
- * @param {Object} user - The logged-in user.
- * @param {Function} onClose - Function to close the modal.
- */
 export default function ProfileModal({ profile, user, onClose }) {
   const [feedbackList, setFeedbackList] = useState([]);
   const [newFeedbackText, setNewFeedbackText] = useState("");
@@ -17,276 +10,64 @@ export default function ProfileModal({ profile, user, onClose }) {
   const [editText, setEditText] = useState("");
   const [selectedSkill, setSelectedSkill] = useState("");
 
-
-  /** 🔄 Load feedback when profile opens */
   useEffect(() => {
-    if (!profile?.id) return;
-    const loadFeedback = async () => {
-      try {
-        const res = await fetch(`${API_BASE}/feedbacks/${profile.id}`);
-        if (!res.ok) throw new Error("Failed to load feedback");
-        const data = await res.json();
-        setFeedbackList(data);
-      } catch {
-        setFeedbackList([]);
-      }
-    };
-    loadFeedback();
-  }, [profile]);
+    if (!profile?.id) return undefined;
+    let active = true;
+    fetch(apiUrl(`/api/v1/feedbacks/${encodeURIComponent(profile.id)}`)).then((response) => {
+      if (!response.ok) throw new Error("Could not load feedback");
+      return response.json();
+    }).then((data) => { if (active) setFeedbackList(data); }).catch(() => { if (active) setFeedbackList([]); });
+    return () => { active = false; };
+  }, [profile?.id]);
 
-  /** ➕ Submit new feedback */
-  const submitFeedback = async () => {
-    if (!newFeedbackText.trim()) return toast.warn("✍️ Please enter feedback!");
+  const refreshFeedback = async () => {
+    const response = await fetch(apiUrl(`/api/v1/feedbacks/${encodeURIComponent(profile.id)}`));
+    if (!response.ok) throw new Error("Could not refresh feedback");
+    setFeedbackList(await response.json());
+  };
 
+  const submitFeedback = async (event) => {
+    event.preventDefault();
+    if (!newFeedbackText.trim()) return toast.warn("Write a note before submitting.");
     try {
-      const res = await fetch(`${API_BASE}/feedbacks`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          user_id: profile.id, // The profile being viewed
-          author_id: user.id, // The logged-in user
-          comment: newFeedbackText.trim(),
-           endorsed_skill: selectedSkill || null
-        }),
-      });
-
-      if (!res.ok) throw new Error("Failed to submit feedback");
-
-      const refreshed = await fetch(`${API_BASE}/feedbacks/${profile.id}`).then(
-        (r) => r.json()
-      );
-      setFeedbackList(refreshed);
+      const response = await fetch(apiUrl("/api/v1/feedbacks"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ user_id: profile.id, author_id: user.id, comment: newFeedbackText.trim(), endorsed_skill: selectedSkill || null }) });
+      if (!response.ok) throw new Error("Could not submit feedback");
+      await refreshFeedback();
       setNewFeedbackText("");
-      toast.success("✅ Feedback submitted!");
-    } catch {
-      toast.error("❌ Failed to submit feedback. Try again later.");
-    }
+      setSelectedSkill("");
+      toast.success("Feedback added.");
+    } catch { toast.error("Could not submit feedback. Try again."); }
   };
 
-  /** ✏️ Start editing feedback */
-  const startEdit = (id, text) => {
-    setIsEditing(id);
-    setEditText(text);
-  };
-
-  /** 💾 Save edited feedback */
-  const saveEdit = async (id) => {
+  const saveEdit = async (feedback) => {
     try {
-      const res = await fetch(`${API_BASE}/feedbacks/${id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id,
-          user_id: profile.id,
-          author_id: user.id,
-          comment: editText.trim(),
-        }),
-      });
-
-      if (!res.ok) throw new Error("Failed to update feedback");
-
-      const updated = await res.json();
-      setFeedbackList((prev) =>
-        prev.map((fb) => (fb.id === id ? updated : fb))
-      );
+      const response = await fetch(apiUrl(`/api/v1/feedbacks/${feedback.id}`), { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...feedback, comment: editText.trim() }) });
+      if (!response.ok) throw new Error("Could not update feedback");
+      setFeedbackList((previous) => previous.map((item) => item.id === feedback.id ? { ...item, comment: editText.trim() } : item));
       setIsEditing(null);
-      toast.success("✅ Feedback updated!");
-    } catch {
-      toast.error("❌ Could not update feedback.");
-    }
+      toast.success("Feedback updated.");
+    } catch { toast.error("Could not update feedback."); }
   };
 
-  /** 🗑 Delete feedback */
   const deleteFeedback = async (id) => {
     try {
-      const res = await fetch(`${API_BASE}/feedbacks/${id}`, {
-        method: "DELETE",
-      });
-      if (!res.ok) throw new Error("Failed to delete feedback");
-
-      setFeedbackList((prev) => prev.filter((fb) => fb.id !== id));
-      toast.success("🗑 Feedback deleted.");
-    } catch {
-      toast.error("❌ Could not delete feedback.");
-    }
+      const response = await fetch(apiUrl(`/api/v1/feedbacks/${id}`), { method: "DELETE" });
+      if (!response.ok) throw new Error("Could not delete feedback");
+      setFeedbackList((previous) => previous.filter((item) => item.id !== id));
+      toast.success("Feedback removed.");
+    } catch { toast.error("Could not remove feedback."); }
   };
 
-  /** 🧭 UI */
-  return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 backdrop-blur-sm">
-      <div className="bg-gray-900 p-8 rounded-2xl w-[90%] max-w-lg border border-gray-700 shadow-2xl relative overflow-y-auto max-h-[90vh]">
-        {/* ✖ Close button */}
-        <button
-          onClick={onClose}
-          className="absolute top-3 right-3 text-gray-400 hover:text-white text-xl"
-        >
-          ✖
-        </button>
-
-        {/* 👤 Profile Info */}
-        <div className="text-center">
-          <img
-            src={profile.avatar_url}
-            alt="avatar"
-            className="w-24 h-24 mx-auto rounded-full border-2 border-indigo-500"
-          />
-          <h2 className="text-2xl font-semibold mt-3 text-indigo-400">
-            {profile.name}
-          </h2>
-          <p className="text-gray-400">{profile.title || "No title set"}</p>
-
-          {/* 🛠 Skills */}
-          <div className="mt-4">
-            <h3 className="font-semibold text-gray-300">Skills</h3>
-            <div className="flex flex-wrap justify-center gap-2 mt-2">
-              {profile.skills?.length ? (
-                profile.skills.map((skill, i) => (
-                  <span
-                    key={i}
-                    className="px-3 py-1 text-sm bg-gray-800 text-indigo-200 rounded-full"
-                  >
-                    {skill}
-                  </span>
-                ))
-              ) : (
-                <p className="text-gray-500 text-sm">No skills listed</p>
-              )}
-            </div>
-          </div>
-
-          {/* 🔗 Linked Accounts */}
-          {profile.linked_accounts && (
-            <div className="mt-5 text-gray-300 text-sm space-y-1">
-              {profile.linked_accounts.linkedin && (
-                <div>
-                  🔗 LinkedIn:{" "}
-                  <a
-                    href={profile.linked_accounts.linkedin}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-indigo-400 hover:underline"
-                  >
-                    {profile.linked_accounts.linkedin}
-                  </a>
-                </div>
-              )}
-              {profile.linked_accounts.github && (
-                <div>
-                  💻 GitHub:{" "}
-                  <a
-                    href={profile.linked_accounts.github}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-indigo-400 hover:underline"
-                  >
-                    {profile.linked_accounts.github}
-                  </a>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* 🗣️ Feedback Section */}
-        <div className="mt-8 border-t border-gray-700 pt-4 text-left">
-          <h3 className="text-lg font-semibold text-indigo-400 mb-2">
-            Feedback
-          </h3>
-
-          {feedbackList.length === 0 ? (
-            <p className="text-gray-400">No feedback yet.</p>
-          ) : (
-            feedbackList.map((fb) => (
-              <div key={fb.id} className="bg-gray-800 p-3 rounded-lg mb-2">
-                {isEditing === fb.id ? (
-                  <>
-                    <textarea
-                      value={editText}
-                      onChange={(e) => setEditText(e.target.value)}
-                      className="w-full bg-gray-900 border border-gray-700 rounded-lg p-2 text-gray-200"
-                    />
-                    <div className="mt-2 flex gap-2">
-                      <button
-                        onClick={() => saveEdit(fb.id)}
-                        className="px-4 py-1.5 bg-gradient-to-r from-purple-500 via-pink-500 to-red-500 text-white rounded-lg hover:scale-105 transition-transform"
-                      >
-                        Save
-                      </button>
-                      <button
-                        onClick={() => setIsEditing(null)}
-                        className="px-4 py-1.5 bg-gray-700 hover:bg-gray-600 rounded-lg text-gray-300"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <p className="text-gray-200">{fb.comment}</p>
-{fb.endorsed_skill && (
-  <p className="text-sm text-indigo-400 mt-1">
-    ⭐ Endorsed Skill: {fb.endorsed_skill}
-  </p>
-)}
-
-                    <p className="text-xs text-gray-500 text-right">
-                      — by {fb.author_id}
-                    </p>
-                    {fb.author_id === user.id && (
-                      <div className="flex gap-3 mt-1 text-xs">
-                        <button
-                          onClick={() => startEdit(fb.id, fb.comment)}
-                          className="text-blue-400 hover:text-blue-300"
-                        >
-                          ✏️ Edit
-                        </button>
-                        <button
-                          onClick={() => deleteFeedback(fb.id)}
-                          className="text-red-400 hover:text-red-300"
-                        >
-                          🗑 Delete
-                        </button>
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-            ))
-          )}
-
-          {/* ➕ Add new feedback */}
-          {user && user.id !== profile.id && (
-            <div className="mt-4">
-              <select
-  value={selectedSkill}
-  onChange={(e) => setSelectedSkill(e.target.value)}
-  className="w-full mb-2 bg-gray-900 border border-gray-700 rounded-lg p-2 text-gray-200"
->
-  <option value="">Select a skill to endorse (optional)</option>
-  {profile.skills?.map((skill, i) => (
-    <option key={i} value={skill}>
-      {skill}
-    </option>
-  ))}
-</select>
-
-<textarea
-  value={newFeedbackText}
-  onChange={(e) => setNewFeedbackText(e.target.value)}
-  placeholder="Write your feedback..."
-  className="w-full bg-gray-900 border border-gray-700 rounded-lg p-2 text-gray-200"
-/>
-
-              <button
-                onClick={submitFeedback}
-                className="mt-2 px-5 py-2.5 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 text-white font-semibold rounded-xl shadow-md shadow-indigo-900/40 transition-all duration-200 hover:scale-105 hover:shadow-lg hover:shadow-pink-700/40"
-              >
-                Submit Feedback
-              </button>
-            </div>
-          )}
-        </div>
+  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <section className="modal-card relative max-w-lg" role="dialog" aria-modal="true" aria-labelledby="profile-modal-heading">
+      <button type="button" onClick={onClose} className="icon-button absolute right-4 top-4" aria-label="Close profile"><X size={18} /></button>
+      <div className="flex items-center gap-4 pr-10"><img src={profile.avatar_url || "/default-avatar.png"} alt="" className="h-16 w-16 rounded-full border border-gray-700 object-cover" /><div className="min-w-0"><h2 id="profile-modal-heading" className="modal-title">{profile.name}</h2><p className="mt-1 text-sm text-gray-400">{profile.title || "Community member"}</p></div></div>
+      <div className="mt-5"><h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">Skills</h3><div className="mt-2 flex flex-wrap gap-2">{profile.skills?.length ? profile.skills.map((skill) => <span key={skill} className="project-skill">{skill}</span>) : <span className="text-sm text-gray-500">No skills listed.</span>}</div></div>
+      {profile.linked_accounts && <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 text-sm">{[["LinkedIn", profile.linked_accounts.linkedin], ["GitHub", profile.linked_accounts.github], ["Codeforces", profile.linked_accounts.codeforces]].filter(([, url]) => url).map(([label, url]) => <a key={label} href={url.startsWith("http") ? url : `https://${url}`} target="_blank" rel="noreferrer" className="font-medium text-indigo-400 hover:underline">{label}</a>)}</div>}
+      <div className="mt-6 border-t border-gray-700 pt-5"><div className="mb-3 flex items-center justify-between"><h3 className="font-semibold text-gray-100">Feedback</h3><span className="text-xs text-gray-500">{feedbackList.length}</span></div>
+        {feedbackList.length === 0 ? <p className="py-3 text-sm text-gray-500">No feedback yet.</p> : <div className="max-h-52 space-y-2 overflow-y-auto">{feedbackList.map((feedback) => <article key={feedback.id} className="surface-subtle p-3">{isEditing === feedback.id ? <><textarea aria-label="Edit feedback" value={editText} onChange={(event) => setEditText(event.target.value)} className="field-control min-h-20" /><div className="mt-2 flex gap-2"><button type="button" onClick={() => saveEdit(feedback)} className="primary-button !min-h-8 !px-3 !text-xs">Save</button><button type="button" onClick={() => setIsEditing(null)} className="secondary-button !min-h-8 !px-3 !text-xs">Cancel</button></div></> : <><p className="text-sm text-gray-200">{feedback.comment}</p>{feedback.endorsed_skill && <span className="mt-2 inline-block text-xs text-indigo-400">Endorsed · {feedback.endorsed_skill}</span>}<div className="mt-2 flex items-center justify-between"><span className="text-xs text-gray-500">{feedback.author_id}</span>{feedback.author_id === user?.id && <span className="flex gap-3"><button type="button" onClick={() => { setIsEditing(feedback.id); setEditText(feedback.comment); }} className="text-xs text-gray-400 hover:text-gray-100">Edit</button><button type="button" onClick={() => deleteFeedback(feedback.id)} className="text-xs text-red-400">Delete</button></span>}</div></>}</article>)}</div>}
+        {user && user.id !== profile.id && <form onSubmit={submitFeedback} className="mt-4 space-y-2"><label className="sr-only" htmlFor="endorse-skill">Optional skill endorsement</label><select id="endorse-skill" value={selectedSkill} onChange={(event) => setSelectedSkill(event.target.value)} className="field-control"><option value="">Endorse a skill (optional)</option>{profile.skills?.map((skill) => <option key={skill} value={skill}>{skill}</option>)}</select><label className="sr-only" htmlFor="feedback-text">Write feedback</label><textarea id="feedback-text" value={newFeedbackText} onChange={(event) => setNewFeedbackText(event.target.value)} placeholder="Share a thoughtful note…" className="field-control min-h-20" /><button type="submit" className="primary-button">Add feedback</button></form>}
       </div>
-    </div>
-  );
+    </section>
+  </div>;
 }

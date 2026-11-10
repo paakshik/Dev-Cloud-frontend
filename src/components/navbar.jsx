@@ -1,23 +1,9 @@
 import React from "react";
+import { LogOut, Menu, Moon, Sun, X } from "lucide-react";
 
-/**
- * Navbar — Main navigation bar for DevCloud.
- * @param {string} tab - Currently active tab.
- * @param {Function} setTab - Function to switch active tab.
- * @param {Object} user - Currently logged-in user (if any).
- * @param {Function} onShowSignup - Opens signup modal.
- * @param {Function} onShowLogin - Opens login modal.
- * @param {boolean} mobileMenu - Whether mobile menu is open.
- * @param {Function} setMobileMenu - Toggles mobile menu.
- */
 export default function Navbar({
-  tab,
-  setTab,
-  user,
-  onShowSignup,
-  onShowLogin,
-  mobileMenu,
-  setMobileMenu,
+  tab, setTab, user, onShowSignup, onShowLogin, mobileMenu, setMobileMenu,
+  theme = "dark", onToggleTheme = () => {}, onLogout = () => {}, unreadCount = 0,
 }) {
   const links = [
     { key: "home", label: "Explore" },
@@ -27,140 +13,84 @@ export default function Navbar({
     { key: "profile", label: "Profile" },
   ];
 
-  // 🧭 Handle navigation and auto-close mobile menu
   const handleNavClick = (key) => {
     setTab(key);
     setMobileMenu(false);
   };
 
-  return (
-    <header className="w-full bg-gray-900/95 backdrop-blur-md sticky top-0 z-50 border-b border-gray-800">
-      {/* 🔹 Navbar Container */}
-      <div className="max-w-7xl mx-auto flex justify-between items-center px-6 py-4">
-        {/* 🔹 Logo */}
-        <h1
-          onClick={() => handleNavClick("home")}
-          className="text-2xl font-bold tracking-wide text-indigo-400 cursor-pointer select-none"
-        >
-          DevCloud
-        </h1>
+  const themeButton = (
+    <button
+      type="button"
+      onClick={onToggleTheme}
+      className="icon-button"
+      aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+      title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+    >
+      {theme === "dark" ? <Sun size={19} aria-hidden="true" /> : <Moon size={19} aria-hidden="true" />}
+      <span className="md:hidden">{theme === "dark" ? "Light mode" : "Dark mode"}</span>
+    </button>
+  );
 
-        {/* 🔹 Desktop Links */}
-        <nav className="hidden md:flex items-center gap-6 text-gray-300">
-          {links.map((l) =>
-            l.key === "profile" && !user ? null : (
-              <button
-                key={l.key}
-                onClick={() => handleNavClick(l.key)}
-                className={`hover:text-indigo-400 ${
-                  tab === l.key ? "text-indigo-400 font-semibold" : ""
-                } transition-all`}
-              >
-                {l.label}
-              </button>
-            )
-          )}
+  const renderLinks = (mobile = false) => links.map((link) => {
+    if (link.key === "profile" && !user) return null;
+    if (link.key === "messages" && !user) return null;
+    return (
+      <button
+        key={link.key}
+        type="button"
+        onClick={() => handleNavClick(link.key)}
+        aria-current={tab === link.key ? "page" : undefined}
+        className={`nav-link ${tab === link.key ? "nav-link-active" : ""} ${mobile ? "w-full text-left" : ""}`}
+      >
+        {link.label}
+        {link.key === "messages" && unreadCount > 0 && <span className="nav-badge" aria-label={`${unreadCount} pending requests`}>{unreadCount > 99 ? "99+" : unreadCount}</span>}
+      </button>
+    );
+  });
+
+  return (
+    <header className="app-header sticky top-0 z-50 border-b backdrop-blur-xl">
+      <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-3.5 sm:px-6">
+        <button type="button" onClick={() => handleNavClick("home")} className="brand-mark" aria-label="DevCloud home">DevCloud<span className="brand-dot">.</span></button>
+
+        <nav className="hidden items-center gap-1 rounded-xl border border-gray-700/60 bg-gray-900/40 p-1 md:flex" aria-label="Main navigation">
+          {renderLinks()}
         </nav>
 
-        {/* 🔹 Right Side (Login / Profile) */}
-        <div className="hidden md:flex items-center gap-4">
-          {!user ? (
-            <div className="flex gap-3">
-              <button
-                onClick={onShowLogin}
-                className="px-5 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg font-medium transition-all"
-              >
-                Login
-              </button>
-              <button
-                onClick={onShowSignup}
-                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg font-medium transition-all"
-              >
-                Sign Up
-              </button>
-            </div>
-          ) : (
-            <div
-              onClick={() => handleNavClick("profile")}
-              className="flex items-center gap-3 cursor-pointer"
-            >
-              <img
-                src={user.avatar_url}
-                alt="avatar"
-                className="w-9 h-9 rounded-full border border-indigo-400"
-              />
-              <span className="text-sm text-gray-300">{user.name}</span>
-            </div>
-          )}
+        <div className="hidden items-center gap-2 md:flex">
+          {themeButton}
+          {!user ? <>
+            <button type="button" onClick={onShowLogin} className="secondary-button">Login</button>
+            <button type="button" onClick={onShowSignup} className="primary-button">Sign Up</button>
+          </> : <>
+            <button type="button" className="user-chip" onClick={() => handleNavClick("profile")}>
+              <img src={user.avatar_url || "/default-avatar.png"} alt="avatar" className="user-avatar" />
+              <span className="max-w-28 truncate">{user.name}</span>
+            </button>
+            <button type="button" className="icon-button" onClick={onLogout} aria-label="Log out" title="Log out"><LogOut size={18} /></button>
+          </>}
         </div>
 
-        {/* 🔹 Mobile Menu Button */}
-        <button
-          onClick={() => setMobileMenu(!mobileMenu)}
-          className="md:hidden p-2 rounded hover:bg-gray-800 transition-all"
-        >
-          <div className="w-6 h-0.5 bg-gray-300 mb-1"></div>
-          <div className="w-6 h-0.5 bg-gray-300 mb-1"></div>
-          <div className="w-6 h-0.5 bg-gray-300"></div>
-        </button>
+        <div className="flex items-center gap-2 md:hidden">
+          {themeButton}
+          <button type="button" onClick={() => setMobileMenu(!mobileMenu)} className="icon-button" aria-expanded={mobileMenu} aria-controls="mobile-navigation" aria-label={mobileMenu ? "Close menu" : "Open menu"}>
+            {mobileMenu ? <X size={20} /> : <Menu size={20} />}
+          </button>
+        </div>
       </div>
 
-      {/* 🔹 Mobile Dropdown */}
-      {mobileMenu && (
-        <div className="md:hidden flex flex-col gap-3 bg-gray-800 px-6 py-4 border-t border-gray-700">
-          {links.map((l) =>
-            l.key === "profile" && !user ? null : (
-              <button
-                key={l.key}
-                onClick={() => handleNavClick(l.key)}
-                className={`text-left ${
-                  tab === l.key
-                    ? "text-indigo-400 font-semibold"
-                    : "text-gray-300"
-                } transition-all`}
-              >
-                {l.label}
-              </button>
-            )
-          )}
-
-          {/* 🔹 Auth Buttons (Mobile) */}
-          {!user ? (
-            <div className="flex flex-col gap-3 mt-3">
-              <button
-                onClick={() => {
-                  onShowLogin();
-                  setMobileMenu(false);
-                }}
-                className="px-5 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg font-medium transition-all"
-              >
-                Login
-              </button>
-              <button
-                onClick={() => {
-                  onShowSignup();
-                  setMobileMenu(false);
-                }}
-                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg font-medium transition-all"
-              >
-                Sign Up
-              </button>
-            </div>
-          ) : (
-            <div
-              onClick={() => handleNavClick("profile")}
-              className="flex items-center gap-3 cursor-pointer mt-3"
-            >
-              <img
-                src={user.avatar_url}
-                alt="avatar"
-                className="w-9 h-9 rounded-full border border-indigo-400"
-              />
-              <span className="text-sm text-gray-300">{user.name}</span>
-            </div>
-          )}
+      {mobileMenu && <div id="mobile-navigation" className="mobile-navigation border-t px-5 py-4 md:hidden">
+        <nav className="flex flex-col gap-1" aria-label="Mobile navigation">{renderLinks(true)}</nav>
+        <div className="mt-4 flex flex-col gap-3 border-t pt-4">
+          {!user ? <>
+            <button type="button" onClick={() => { onShowLogin(); setMobileMenu(false); }} className="secondary-button w-full">Login</button>
+            <button type="button" onClick={() => { onShowSignup(); setMobileMenu(false); }} className="primary-button w-full">Sign Up</button>
+          </> : <>
+            <button type="button" className="user-chip w-full" onClick={() => handleNavClick("profile")}><img src={user.avatar_url || "/default-avatar.png"} alt="" className="user-avatar" /><span>{user.name}</span></button>
+            <button type="button" className="secondary-button w-full" onClick={() => { onLogout(); setMobileMenu(false); }}><LogOut size={17} /> Log out</button>
+          </>}
         </div>
-      )}
+      </div>}
     </header>
   );
 }

@@ -1,5 +1,8 @@
 // src/utils/api.js
-const API_BASE = "http://127.0.0.1:8000/api/v1";
+const API_ORIGIN = (process.env.REACT_APP_API_URL || "https://dev-cloud-4t37.onrender.com").replace(/\/$/, "");
+const API_BASE = (process.env.REACT_APP_API_BASE_URL || `${API_ORIGIN}/api/v1`).replace(/\/$/, "");
+
+export const apiUrl = (path = "") => `${API_ORIGIN}${path.startsWith("/") ? path : `/${path}`}`;
 
 export async function fetchJSON(endpoint, options = {}) {
   try {
